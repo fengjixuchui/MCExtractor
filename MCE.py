@@ -6,7 +6,7 @@ Intel, AMD, VIA & Freescale Microcode Extractor
 Copyright (C) 2016-2020 Plato Mavropoulos
 """
 
-title = 'MC Extractor v1.43.0'
+title = 'MC Extractor v1.45.0'
 
 import os
 import re
@@ -23,7 +23,7 @@ import binascii
 import datetime
 import traceback
 import prettytable
-from urllib import request
+import urllib.request
 
 # Initialize and setup Colorama
 colorama.init()
@@ -635,9 +635,12 @@ def mce_exit(code=0) :
 		connection.close() # Close DB Connection
 	except :
 		pass
+	
 	colorama.deinit() # Stop Colorama
+	
 	sys.exit(code)
 	
+# https://stackoverflow.com/a/22881871 by jfs
 def get_script_dir(follow_symlinks=True) :
 	if getattr(sys, 'frozen', False) :
 		path = os.path.abspath(sys.executable)
@@ -648,7 +651,7 @@ def get_script_dir(follow_symlinks=True) :
 
 	return os.path.dirname(path)
 
-# https://stackoverflow.com/a/781074
+# https://stackoverflow.com/a/781074 by Torsten Marek
 def show_exception_and_exit(exc_type, exc_value, tb) :
 	if exc_type is KeyboardInterrupt :
 		print('\n')
@@ -675,7 +678,7 @@ def checksum32(data) :
 	
 	return -chk32 & 0xFFFFFFFF # Return 0
 	
-# Process ctypes Structure Classes
+# https://github.com/skochinsky/me-tools/blob/master/me_unpack.py by Igor Skochinsky
 def get_struct(input_stream, start_offset, class_name, param_list = None) :
 	if param_list is None : param_list = []
 	
@@ -687,7 +690,7 @@ def get_struct(input_stream, start_offset, class_name, param_list = None) :
 	if (start_offset >= file_end) or (fit_len < struct_len) :
 		print(col_r + 'Error: Offset 0x%X out of bounds at %s, possibly incomplete image!' % (start_offset, class_name.__name__) + col_e)
 		
-		mce_exit(1)
+		mce_exit(-1)
 	
 	ctypes.memmove(ctypes.addressof(structure), struct_data, fit_len)
 	
@@ -714,44 +717,55 @@ def mc_db_name(in_file, mc_name) :
 
 def update_check() :
 	try :
-		latest_mce = request.urlopen('https://raw.githubusercontent.com/platomav/MCExtractor/master/MCE.py').read().decode('utf-8')
-		latest_mce_idx = latest_mce.find('title = \'MC Extractor v')
-		if latest_mce_idx != -1 :
-			latest_mce_ver = latest_mce[latest_mce_idx:][23:].split('\'')[0].split('_')[0]
-			script_mce_ver = title[14:].split('_')[0]
-			mce_is_upd = mce_is_latest(script_mce_ver.split('.')[:3], latest_mce_ver.split('.')[:3])
+		latest_py = urllib.request.urlopen('https://raw.githubusercontent.com/platomav/MCExtractor/master/MCE.py').read()
+		latest_py_utf = latest_py.decode('utf-8')
+		latest_py_idx = latest_py_utf.find('title = \'MC Extractor v')
+		if latest_py_idx != -1 :
+			latest_py_ver = latest_py_utf[latest_py_idx:][23:].split('\'')[0].split('_')[0]
+			script_py_ver = title[14:].split('_')[0]
+			py_is_upd = mce_is_latest(script_py_ver.split('.')[:3], latest_py_ver.split('.')[:3])
 		else :
 			raise()
 		
-		latest_db = request.urlopen('https://raw.githubusercontent.com/platomav/MCExtractor/master/MCE.db').read()
-		with open('__MCE_DB__.temp', 'wb') as temp_db : temp_db.write(latest_db)
-		connection_temp = sqlite3.connect('__MCE_DB__.temp')
+		latest_db = urllib.request.urlopen('https://raw.githubusercontent.com/platomav/MCExtractor/master/MCE.db').read()
+		with open('MCE.db.temp', 'wb') as temp_db : temp_db.write(latest_db)
+		connection_temp = sqlite3.connect('MCE.db.temp')
 		cursor_temp = connection_temp.cursor()
 		cursor_temp.execute('PRAGMA quick_check')
 		latest_db_rev = (cursor_temp.execute('SELECT revision FROM MCE')).fetchone()[0]
 		cursor_temp.close()
 		connection_temp.close()
-		if os.path.isfile('__MCE_DB__.temp') : os.remove('__MCE_DB__.temp')
+		if os.path.isfile('MCE.db.temp') : os.remove('MCE.db.temp')
 		
 		script_db_rev = (cursor.execute('SELECT revision FROM MCE')).fetchone()[0]
 		db_is_upd = True if script_db_rev >= latest_db_rev else False
 		
 		pt, pt_empty = mc_table(['#','Current','Latest','Updated'], True, 1)
 		pt.title = col_y + 'MC Extractor & DB Update Check' + col_e
-		pt.add_row(['MCE', script_mce_ver, latest_mce_ver, col_g + 'Yes' + col_e if mce_is_upd else col_r + 'No' + col_e])
+		pt.add_row(['MCE', script_py_ver, latest_py_ver, col_g + 'Yes' + col_e if py_is_upd else col_r + 'No' + col_e])
 		pt.add_row(['DB', script_db_rev, latest_db_rev, col_g + 'Yes' + col_e if db_is_upd else col_r + 'No' + col_e])
 		print('\n%s' % pt)
 		
 		mce_github = 'Download the latest from https://github.com/platomav/MCExtractor/'
-		if mce_is_upd and db_is_upd : print(col_g + '\nMC Extractor & Database are up to date!' + col_e)
-		elif not mce_is_upd and not db_is_upd : print(col_m + '\nMC Extractor & Database are outdated!\n\n%s' % mce_github + col_e)
-		elif not mce_is_upd : print(col_m + '\nMC Extractor is outdated!\n\n%s' % mce_github + col_e)
-		elif not db_is_upd : print(col_m + '\nMC Extractor Database is outdated!\n\n%s' % mce_github + col_e)
+		if py_is_upd and db_is_upd :
+			print(col_g + '\nMC Extractor & Database are up to date!' + col_e)
+			
+			mce_exit(0)
+		else :
+			if not py_is_upd and not db_is_upd : print(col_m + '\nMC Extractor & Database are outdated!\n\n%s' % mce_github + col_e)
+			elif not py_is_upd : print(col_m + '\nMC Extractor is outdated!\n\n%s' % mce_github + col_e)
+			elif not db_is_upd : print(col_m + '\nMC Extractor Database is outdated!\n\n%s' % mce_github + col_e)
+			
+			if param.mce_ubu :
+				with open('MCE.py.temp', 'wb') as temp_py : temp_py.write(latest_py)
+				with open('MCE.db.temp', 'wb') as temp_db : temp_db.write(latest_db)
+			
+			mce_exit(1)
 	
-	except :
+	except Exception :
 		print(col_r + '\nError: Failed to check for MC Extractor & Database updates!' + col_e)
-	
-	mce_exit(0)
+		
+		mce_exit(-1)
 	
 def mce_is_latest(ver_before, ver_after) :
 	# ver_before/ver_after = [X.X.X]
@@ -761,6 +775,13 @@ def mce_is_latest(ver_before, ver_after) :
 		return True
 	else :
 		return False
+	
+def chk_mc_mod(mc_nr, msg_vendor, mc_is_mod, mc_db_note) :
+	if mc_is_mod == 1 :
+		mod_info = ' (%s)' % mc_db_note if mc_db_note != '' else ''
+		msg_vendor.append(col_y + "\nNote: Microcode #%d has an OEM/User modified header%s!" % (mc_nr, mod_info) + col_e)
+	
+	return msg_vendor
 	
 def db_new_MCE() :
 	db_is_dev = (cursor.execute('SELECT developer FROM MCE')).fetchone()[0]
@@ -798,7 +819,7 @@ def save_mc_file(mc_path, mc_data, mc_hash) :
 			
 		with open(mc_path, 'wb') as mc_file : mc_file.write(mc_data)
 
-def mc_upd_chk_intel(mc_upd_chk_rsl, in_pl_bit, in_rel, in_ver) :
+def mc_upd_chk_intel(mc_upd_chk_rsl, in_pl_bit, in_rel, in_ver, in_mod) :
 	is_latest = True
 	mc_latest = None
 	
@@ -818,9 +839,11 @@ def mc_upd_chk_intel(mc_upd_chk_rsl, in_pl_bit, in_rel, in_ver) :
 			is_latest = False
 			mc_latest = [cpu_id, db_pl_val, db_ver, db_year, db_month, db_day, db_rel]
 	
+	if in_mod == 1 : is_latest = False # Modded input microcodes should not be shown as Latest
+	
 	return is_latest, mc_latest
 	
-def mc_upd_chk_amd(mc_upd_chk_rsl, in_ver) :
+def mc_upd_chk_amd(mc_upd_chk_rsl, in_ver, in_mod) :
 	is_latest = True
 	mc_latest = None
 	
@@ -835,6 +858,8 @@ def mc_upd_chk_amd(mc_upd_chk_rsl, in_ver) :
 		or ((year,month,day) == (db_year,db_month,db_day) and in_ver < db_ver and not param.get_last) :
 			is_latest = False
 			mc_latest = [cpu_id, db_ver, db_year, db_month, db_day]
+			
+	if in_mod == 1 : is_latest = False # Modded input microcodes should not be shown as Latest
 	
 	return is_latest, mc_latest
 	
@@ -879,32 +904,10 @@ def display_sql(cursor,title,header,padd):
 	
 	print('\n%s' % sqlr)
 	
-# MCE Version Header
-def mce_hdr() :
-	db_rev = col_r + 'Unknown' + col_e
-	db_dev = col_r + ' Unknown' + col_e
-	
-	if os.path.isfile(db_path) :
-		try :
-			connection_header = sqlite3.connect(db_path)
-			cursor_header = connection_header.cursor()
-			
-			cursor_header.execute('PRAGMA quick_check')
-			
-			hdr_res = (cursor_header.execute('SELECT revision, developer FROM MCE')).fetchone()
-			db_rev = col_y + 'r' + str(hdr_res[0]) + col_e
-			db_dev = hdr_res[1]
-		
-			if db_dev == 1 : db_dev = col_y + ' Dev' + col_e
-			else : db_dev = ''
-		
-			cursor_header.close()
-			connection_header.close()
-		except :
-			pass
-	
+def mce_hdr(hdr_title) :
 	hdr_pt,hdr_pt_empty = mc_table([], False, 1)
-	hdr_pt.add_row([col_y + '        %s' % title + col_e + ' %s%s        ' % (db_rev, db_dev)])
+	hdr_pt.add_row([col_y + '        %s        ' % hdr_title + col_e])
+	
 	print(hdr_pt)
 	
 def mass_scan(f_path) :
@@ -916,18 +919,13 @@ def mass_scan(f_path) :
 	input('\nFound %s file(s)\n\nPress enter to start' % len(mass_files))
 	
 	return mass_files
-	
+
 # Get MCE Parameters from input
 param = MCE_Param(mce_os, sys.argv)
-	
-# Actions for MCE but not UBU or UEFIStrip
+
+# Pause after any unexpected python exception
 if not param.mce_extr and not param.mce_ubu :
-	# Pause after any unexpected python exception
 	sys.excepthook = show_exception_and_exit
-	
-	# Set console/shell window title
-	if mce_os == 'win32' : ctypes.windll.kernel32.SetConsoleTitleW(title)
-	elif mce_os.startswith('linux') or mce_os == 'darwin' or mce_os.find('bsd') != -1 : sys.stdout.write('\x1b]2;' + title + '\x07')
 	
 # Get script location
 mce_dir = get_script_dir()
@@ -941,8 +939,59 @@ mcb_path = os.path.join(mce_dir, 'MCB.bin')
 # Enumerate parameter input
 arg_num = len(sys.argv)
 
+# Connect to MCE Database
+if os.path.isfile(db_path) :
+	connection = sqlite3.connect(db_path)
+	cursor = connection.cursor()
+	
+	# Validate DB health
+	try :
+		cursor.execute('PRAGMA quick_check')
+	except :
+		mce_hdr(title)
+		print(col_r + '\nError: MCE.db file is corrupted!' + col_e)
+		mce_exit(-1)
+	
+	# Initialize DB, if found empty
+	cursor.execute('CREATE TABLE IF NOT EXISTS MCE(revision INTEGER DEFAULT 0, developer INTEGER DEFAULT 1, date INTEGER DEFAULT 0, \
+					minimum BLOB DEFAULT "0.0.0")')
+	cursor.execute('CREATE TABLE IF NOT EXISTS Intel(cpuid BLOB, platform BLOB, version BLOB, yyyymmdd TEXT, size BLOB, checksum BLOB, \
+					modded INTEGER DEFAULT 0, notes TEXT DEFAULT "")')
+	cursor.execute('CREATE TABLE IF NOT EXISTS VIA(cpuid BLOB, signature TEXT, version BLOB, yyyymmdd TEXT, size BLOB, checksum BLOB, \
+					modded INTEGER DEFAULT 0, notes TEXT DEFAULT "")')
+	cursor.execute('CREATE TABLE IF NOT EXISTS FSL(name TEXT, model BLOB, major BLOB, minor BLOB, size BLOB, checksum BLOB, \
+					modded INTEGER DEFAULT 0, notes TEXT DEFAULT "")')
+	cursor.execute('CREATE TABLE IF NOT EXISTS AMD(cpuid BLOB, nbdevid BLOB, sbdevid BLOB, nbsbrev BLOB, version BLOB, \
+					yyyymmdd TEXT, size BLOB, chkbody BLOB, chkmc BLOB, modded INTEGER DEFAULT 0, notes TEXT DEFAULT "")')
+	if not cursor.execute('SELECT EXISTS(SELECT 1 FROM MCE)').fetchone()[0] : cursor.execute('INSERT INTO MCE DEFAULT VALUES')
+	connection.commit()
+	
+	# Check for MCE & DB incompatibility
+	db_rev = (cursor.execute('SELECT revision FROM MCE')).fetchone()[0]
+	db_dev = ['','Dev'][(cursor.execute('SELECT developer FROM MCE')).fetchone()[0]]
+	db_min = (cursor.execute('SELECT minimum FROM MCE')).fetchone()[0]
+	if not mce_is_latest(title[14:].split('_')[0].split('.')[:3], db_min.split('_')[0].split('.')[:3]) :
+		mce_hdr(title)
+		print(col_r + '\nError: DB r%d %s requires MCE >= v%s!' % (db_rev, db_dev, db_min) + col_e)
+		mce_exit(-1)
+	
+else :
+	cursor = None
+	connection = None
+	mce_hdr(title)
+	print(col_r + '\nError: MCE.db file is missing!' + col_e)
+	mce_exit(-1)
+
+rev_dev = (cursor.execute('SELECT revision, developer FROM MCE')).fetchone()
+mce_title = '%s r%d%s' % (title, rev_dev[0], ' Dev' if rev_dev[1] else '')
+
+# Set console/shell window title
+if not param.mce_extr and not param.mce_ubu :
+	if mce_os == 'win32' : ctypes.windll.kernel32.SetConsoleTitleW(mce_title)
+	elif mce_os.startswith('linux') or mce_os == 'darwin' or mce_os.find('bsd') != -1 : sys.stdout.write('\x1b]2;' + mce_title + '\x07')
+
 if not param.skip_intro :
-	mce_hdr()
+	mce_hdr(mce_title)
 
 	print("\nWelcome to Intel, AMD, VIA & Freescale Microcode Extractor\n")
 
@@ -976,11 +1025,11 @@ if not param.skip_intro :
 	arg_num = len(sys.argv)
 	
 	os.system(cl_wipe)
-
-	mce_hdr()
+	
+	mce_hdr(mce_title)
 
 elif not param.mce_extr and not param.get_last :
-	mce_hdr()
+	mce_hdr(mce_title)
 
 if (arg_num < 2 and not param.upd_check and not param.help_scr and not param.mass_scan
 and not param.search and not param.get_last) or param.help_scr :
@@ -991,42 +1040,6 @@ if param.mass_scan :
 	source = mass_scan(in_path)
 else :
 	source = sys.argv[1:] # Skip script/executable
-	
-# Connect to DB, if valid
-if os.path.isfile(db_path) :
-	connection = sqlite3.connect(db_path)
-	cursor = connection.cursor()
-	
-	# Validate DB health
-	try :
-		cursor.execute('PRAGMA quick_check')
-	except :
-		print(col_r + '\nError: MCE.db file is corrupted!' + col_e)
-		mce_exit(1)
-	
-	# Initialize DB, if found empty
-	cursor.execute('CREATE TABLE IF NOT EXISTS MCE(revision INTEGER DEFAULT 0, developer INTEGER DEFAULT 1, date INTEGER DEFAULT 0,\
-					minimum BLOB DEFAULT "0.0.0")')
-	cursor.execute('CREATE TABLE IF NOT EXISTS Intel(cpuid BLOB, platform BLOB, version BLOB, yyyymmdd TEXT, size BLOB, checksum BLOB)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS VIA(cpuid BLOB, signature TEXT, version BLOB, yyyymmdd TEXT, size BLOB, checksum BLOB)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS FSL(name TEXT, model BLOB, major BLOB, minor BLOB, size BLOB, checksum BLOB, note TEXT)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS AMD(cpuid BLOB, nbdevid BLOB, sbdevid BLOB, nbsbrev BLOB, version BLOB,\
-					yyyymmdd TEXT, size BLOB, chkbody BLOB, chkmc BLOB)')
-	if not cursor.execute('SELECT EXISTS(SELECT 1 FROM MCE)').fetchone()[0] : cursor.execute('INSERT INTO MCE DEFAULT VALUES')
-	connection.commit()
-	
-	# Check for MCE & DB incompatibility
-	db_rev = (cursor.execute('SELECT revision FROM MCE')).fetchone()[0]
-	db_min = (cursor.execute('SELECT minimum FROM MCE')).fetchone()[0]
-	if not mce_is_latest(title[14:].split('_')[0].split('.')[:3], db_min.split('_')[0].split('.')[:3]) :
-		print(col_r + '\nError: DB r%d requires MCE >= v%s!' % (db_rev,db_min) + col_e)
-		mce_exit(1)
-	
-else :
-	cursor = None
-	connection = None
-	print(col_r + '\nError: MCE.db file is missing!' + col_e)
-	mce_exit(1)
 	
 if param.upd_check : update_check()
 
@@ -1041,21 +1054,21 @@ if param.search and not param.build_blob :
 		cpu_id = '%0.8X' % int(cpu_id, 16)
 	except :
 		print(col_r + '\nError: Invalid CPUID (Intel, AMD, VIA) or Model (FSL)!' + col_e)
-		mce_exit(1)
+		mce_exit(-1)
 	
-	res_i = cursor.execute('SELECT cpuid,platform,version,yyyymmdd,size FROM Intel WHERE cpuid=? ORDER BY yyyymmdd DESC', (cpu_id,))
+	res_i = cursor.execute('SELECT cpuid,platform,version,yyyymmdd,size,modded,notes FROM Intel WHERE cpuid=? ORDER BY yyyymmdd DESC', (cpu_id,))
 	display_sql(res_i, col_b + 'Intel' + col_e, True, 1)
 	
-	res_a = cursor.execute('SELECT cpuid,version,yyyymmdd,size FROM AMD WHERE cpuid=? ORDER BY yyyymmdd DESC', (cpu_id,))
+	res_a = cursor.execute('SELECT cpuid,version,yyyymmdd,size,modded,notes FROM AMD WHERE cpuid=? ORDER BY yyyymmdd DESC', (cpu_id,))
 	display_sql(res_a, col_r + 'AMD' + col_e, True, 1)
 	
-	res_v = cursor.execute('SELECT cpuid,signature,version,yyyymmdd,size FROM VIA WHERE cpuid=? ORDER BY yyyymmdd DESC', (cpu_id,))
+	res_v = cursor.execute('SELECT cpuid,signature,version,yyyymmdd,size,modded,notes FROM VIA WHERE cpuid=? ORDER BY yyyymmdd DESC', (cpu_id,))
 	display_sql(res_v, col_c + 'VIA' + col_e, True, 1)
 	
-	res_f = cursor.execute('SELECT name,model,major,minor,size,note FROM FSL WHERE model=? ORDER BY name DESC', (cpu_id,))
+	res_f = cursor.execute('SELECT name,model,major,minor,size,modded,notes FROM FSL WHERE model=? ORDER BY name DESC', (cpu_id,))
 	display_sql(res_f, col_y + 'Freescale' + col_e, True, 1)
 	
-	mce_exit()
+	mce_exit(0)
 	
 # Detect latest Intel or AMD microcode via user input
 # Can be used with currently loaded microcode info from OS
@@ -1084,7 +1097,7 @@ if param.get_last :
 		platform = int(platform, 16) # Microcode IDs or System ID (i.e. 0x12 = 1,4 or 0x02 = 1 or 0x10 = 4)
 	except :
 		print(col_r + '\nError: Invalid Vendor, CPUID, Version or Platform!' + col_e)
-		mce_exit(1)
+		mce_exit(-1)
 	
 	# The input microcode date is required for Latest check, get it from DB
 	# The Latest AMD check is inaccurate for 2002-2003 microcodes due to lack of NB ID & Rev
@@ -1095,18 +1108,18 @@ if param.get_last :
 	
 	if not date :
 		print(col_r + '\nError: %s CPUID %0.8X Version %0.8X not found in DB!' % (vendor, cpu_id, version) + col_e)
-		mce_exit(2)
+		mce_exit(-1)
 	
 	day = date[0][0][6:8]
 	month = date[0][0][4:6]
 	year = date[0][0][:4]
 	
 	if vendor == 'Intel' :
-		mc_upd_chk_rsl = (cursor.execute('SELECT yyyymmdd,platform,version FROM Intel WHERE cpuid=?', ('%0.8X' % cpu_id,))).fetchall()
-		is_latest, mc_latest = mc_upd_chk_intel(mc_upd_chk_rsl, intel_plat(platform), 'PRE' if ctypes.c_int(version).value < 0 else 'PRD', version)
+		mc_upd_chk_rsl = (cursor.execute('SELECT yyyymmdd,platform,version FROM Intel WHERE cpuid=? AND modded=?', ('%0.8X' % cpu_id,0,))).fetchall()
+		is_latest, mc_latest = mc_upd_chk_intel(mc_upd_chk_rsl, intel_plat(platform), 'PRE' if ctypes.c_int(version).value < 0 else 'PRD', version, 0)
 	else :
-		mc_upd_chk_rsl = (cursor.execute('SELECT yyyymmdd,version FROM AMD WHERE cpuid=?', ('%0.8X' % cpu_id,))).fetchall()
-		is_latest, mc_latest = mc_upd_chk_amd(mc_upd_chk_rsl, version)
+		mc_upd_chk_rsl = (cursor.execute('SELECT yyyymmdd,version FROM AMD WHERE cpuid=? AND modded=?', ('%0.8X' % cpu_id,0,))).fetchall()
+		is_latest, mc_latest = mc_upd_chk_amd(mc_upd_chk_rsl, version, 0)
 	
 	print('\n%s' % is_latest)
 	if vendor == 'Intel' and mc_latest :
@@ -1138,11 +1151,20 @@ blob_lut_done = b''
 blob_data = b''
 blob_count = 0
 cur_count = 0
+mc_nr = 0
 in_count = len(source)
 for arg in source :
 	if arg in param.val : in_count -= 1
 	
 for in_file in source :
+	
+	if not os.path.isfile(in_file) :
+		if any(p in in_file for p in param.val) : continue
+		
+		print(col_r + '\nError: file %s was not found!' % in_file + col_e)
+		
+		if not param.mass_scan : mce_exit(-1)
+		else : continue
 	
 	# File Variable Initialization
 	mc_nr = 0
@@ -1159,14 +1181,6 @@ for in_file in source :
 	mc_conv_data = b''
 	no_yes = [col_r + 'No' + col_e,col_g + 'Yes' + col_e]
 	cur_count += 1
-	
-	if not os.path.isfile(in_file) :
-		if any(p in in_file for p in param.val) : continue
-		
-		print(col_r + '\nError: file %s was not found!' % in_file + col_e)
-		
-		if not param.mass_scan : mce_exit(1)
-		else : continue
 	
 	if not param.mce_extr and not param.mce_ubu :
 		if in_file in temp_mc_paths : print(col_c + '\n%s\n' % os.path.basename(in_file) + col_e)
@@ -1364,6 +1378,9 @@ for in_file in source :
 		mc_at_db = (cursor.execute('SELECT * FROM Intel WHERE cpuid=? AND platform=? AND version=? AND yyyymmdd=? AND size=? \
 					AND checksum=?', ('%0.8X' % cpu_id, '%0.8X' % plat, '%0.8X' % patch_u, year + month + day, '%0.8X' % mc_len, '%0.8X' % mc_chk,))).fetchone()
 		
+		# Check if Microcode is marked as OEM/User modified in DB
+		msg_i = chk_mc_mod(mc_nr, msg_i, mc_at_db[6], mc_at_db[7])
+		
 		if param.build_db :
 			if mc_at_db is None and in_file not in temp_mc_paths :
 				db_new_MCE()
@@ -1382,10 +1399,10 @@ for in_file in source :
 			if in_file not in temp_mc_paths : mc_db_name(in_file, mc_name)
 			continue
 		
-		mc_upd_chk_rsl = (cursor.execute('SELECT yyyymmdd,platform,version FROM Intel WHERE cpuid=?', ('%0.8X' % cpu_id,))).fetchall()
+		mc_upd_chk_rsl = (cursor.execute('SELECT yyyymmdd,platform,version FROM Intel WHERE cpuid=? AND modded=?', ('%0.8X' % cpu_id,0,))).fetchall()
 		
 		# Determine if MC is Last or Outdated
-		is_latest, mc_latest = mc_upd_chk_intel(mc_upd_chk_rsl, plat_bit, rel_file, patch_u)
+		is_latest, mc_latest = mc_upd_chk_intel(mc_upd_chk_rsl, plat_bit, rel_file, patch_u, mc_at_db[6])
 		
 		# Build Microcode Repository (PRD & Last)
 		if param.build_repo :
@@ -1531,16 +1548,19 @@ for in_file in source :
 			mc_len_db = '%0.8X' % mc_len
 		
 		mc_at_db = (cursor.execute('SELECT * FROM AMD WHERE cpuid=? AND nbdevid=? AND sbdevid=? AND nbsbrev=? AND version=? \
-								AND yyyymmdd=? AND size=? AND chkbody=? AND chkmc=?', (cpu_id, nb_id, sb_id, nbsb_rev_id,
-								'%0.8X' % patch, year + month + day, mc_len_db, '%0.8X' % mc_chk, '%0.8X' % mc_file_chk, ))).fetchone()
+									AND yyyymmdd=? AND size=? AND chkbody=? AND chkmc=?', (cpu_id, nb_id, sb_id, nbsb_rev_id,
+									'%0.8X' % patch, year + month + day, mc_len_db, '%0.8X' % mc_chk, '%0.8X' % mc_file_chk, ))).fetchone()
+		
+		# Check if Microcode is marked as OEM/User modified in DB
+		msg_a = chk_mc_mod(mc_nr, msg_a, mc_at_db[9], mc_at_db[10])
 		
 		if param.build_db :
 			if mc_at_db is None :
 				db_new_MCE()
 				
 				cursor.execute('INSERT INTO AMD (cpuid, nbdevid, sbdevid, nbsbrev, version, yyyymmdd, size, chkbody, chkmc) \
-							VALUES (?,?,?,?,?,?,?,?,?)', (cpu_id, nb_id, sb_id, nbsb_rev_id, '%0.8X' % patch, year + month + day,
-							mc_len_db, '%0.8X' % mc_chk, '%0.8X' % mc_file_chk))
+								VALUES (?,?,?,?,?,?,?,?,?)', (cpu_id, nb_id, sb_id, nbsb_rev_id, '%0.8X' % patch, year + month + day,
+								mc_len_db, '%0.8X' % mc_chk, '%0.8X' % mc_file_chk))
 				
 				connection.commit()
 				
@@ -1556,7 +1576,7 @@ for in_file in source :
 		mc_upd_chk_rsl = (cursor.execute('SELECT yyyymmdd,version FROM AMD WHERE cpuid=?', (cpu_id,))).fetchall()
 		
 		# Determine if MC is Last or Outdated
-		is_latest, mc_latest = mc_upd_chk_amd(mc_upd_chk_rsl, patch)
+		is_latest, mc_latest = mc_upd_chk_amd(mc_upd_chk_rsl, patch, mc_at_db[9])
 		
 		# Build Microcode Repository (Last)
 		if param.build_repo :
@@ -1658,6 +1678,9 @@ for in_file in source :
 		
 		mc_at_db = (cursor.execute('SELECT * FROM VIA WHERE cpuid=? AND signature=? AND version=? AND yyyymmdd=? AND size=? AND checksum=?',
 				  ('%0.8X' % cpu_id, name, '%0.8X' % patch, year + month + day, '%0.8X' % mc_len, '%0.8X' % mc_chk,))).fetchone()
+		
+		# Check if Microcode is marked as OEM/User modified in DB
+		msg_v = chk_mc_mod(mc_nr, msg_v, mc_at_db[6], mc_at_db[7])
 		
 		if param.build_db :
 			if mc_at_db is None :
@@ -1773,6 +1796,9 @@ for in_file in source :
 		
 		mc_at_db = (cursor.execute('SELECT * FROM FSL WHERE name=? AND model=? AND major=? AND minor=? AND size=? AND checksum=?',
 				  (name, model, major, minor, '%0.8X' % mc_len, '%0.8X' % mc_chk,))).fetchone()
+		
+		# Check if Microcode is marked as OEM/User modified in DB
+		msg_f = chk_mc_mod(mc_nr, msg_f, mc_at_db[6], mc_at_db[7])
 		
 		if param.build_db :
 			if mc_at_db is None :
@@ -1926,5 +1952,5 @@ elif param.build_blob :
 		mc_blob.write(blob_data)
 		
 	print(col_g + 'Created MCE Microcode Blob (MCB)!' + col_e)
-		
-mce_exit(0)
+
+mce_exit(mc_nr if param.mce_ubu else 0)
